@@ -1,15 +1,13 @@
 module.exports = runChild;
 
-const { spawn } = require("child_process");
+const { spawn, SpawnOptionsWithoutStdio } = require('child_process');
 
 /**
  * RunChild - Spawn a system command.
  * @param {String} cmd - Command line to fork launch (Spawn).
  * @param {Array<String>} argv - Argument to pass to the forked command.
- * @param {Object} options - Options of Spawn (Child Process).
- * @param {Boolean} options.debug - Print logs of Spawn.
- * @param {String} options.cwd - Path of Spawn Bin folder.
- * @returns 
+ * @param {SpawnOptionsWithoutStdio} options - Options of Spawn (Child Process).
+ * @returns
  */
 function runChild(cmd, argv, options = {}) {
   const controller = new AbortController();
@@ -17,38 +15,29 @@ function runChild(cmd, argv, options = {}) {
   return new Promise((res, rej) => {
     let child;
     let response = '';
+    let error = '';
 
     if (argv && !Array.isArray(argv) && !Object.keys(options).length) {
       options = argv;
       argv = undefined;
     }
-    const { debug, ...rest } = options;
-    options = debug 
-      ? { ...rest, stdio: ['inherit', 'inherit', 'inherit'], signal }
-      : { ...rest, signal };
+    options = { ...options, signal };
     child = !argv ? spawn(cmd, options) : spawn(cmd, argv, options);
 
-    !debug && child.stdout.on('data', (data) => {
-      response = response + data;
-    });
-    !debug && child.stderr.on('error', (data) => {
-      console.error(`ERROR: ${data}`);
-      controller.abort()
-      rej(data);
+    child.stdout.on('data', (data) => (response = response + data));
+    child.stderr.on('data', (data) => (error = error + data));
 
-    });
     child.on('exit', (code) => {
       if (code) {
-        rej(code);
-      }
-      else res(response);
+        if (error) rej(new Error(error));
+        else rej(new Error(`Exit with code: ${code}`));
+      } else res(response);
       controller.abort();
     });
     child.on('error', (data) => {
-      if (data) rej(data);
-      controller.abort()
+      if (error || data) rej(error || data);
+      controller.abort();
     });
     if (!child) rej('Failed to spawn...');
-    return child;
   });
 }
